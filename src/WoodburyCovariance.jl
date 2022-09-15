@@ -19,56 +19,67 @@ is trivial thanks to the matrix inversion lemma.
 struct WoodburyCovariance{T,N} <: Covariance{T,N}
 	W :: AbstractArray{T,1} # Diagonal (size = width)
 	U :: AbstractArray{T,2} # width x rank  matrix
+	C :: Union{AbstractArray{T,2},LinearAlgebra.UniformScaling{Bool}}# rank x rank matrix
 	denom :: AbstractArray{T} # 1/(C^-1 + U' W U)
 	width :: NTuple			# size of the input space
 	rank :: Integer			# rank of U
-	function WoodburyCovariance(W::AbstractArray{T1} , U::AbstractArray{T2} ) where {T1<:Real,T2<:Real}
-		T = promote_type(T1,T2)
-		W,U = convert(AbstractArray{T},W), convert(AbstractArray{T},U)
-		width = size(W)
-		N  = 2*length(width)
-		if ndims(W)==ndims(U) && width == size(U) # add singleton dimension if needed
-			U = reshape(U[:],Val(2))
-			rank = 1
-		elseif (ndims(W) +1) ==ndims(U)
-			@assert width == size(U[..,1]) 
-			rank = last(size(U))
-			U = reshape(U,prod(width),rank)
-		else
-			error("U and W are not conformable")
-		end
-		W = W[:]
-		denom =  inv(I + U'*(W.*U))
-		return new{T,N}(W,U,denom,width, rank)
-	end
-	function WoodburyCovariance{T}(width::Int,rank::Int) where {T<:Real}
-		return WoodburyCovariance{T}(Tuple(width),rank::Int)
-	end
+end
 
-	function WoodburyCovariance{T}(width::NTuple,rank::Int) where {T<:Real}
-		N  = 2*length(width)
-		L = prod(width)
-		W = ones(T,L)
-		U = zeros(T,L,rank)
-		denom = zeros(T,rank,rank)
-		return new{T,N}(W,U,denom,width, rank)
+
+"""
+    WoodburyCovariance(W::AbstractArray{T1} , U::AbstractArray{T2} ) where {T1<:Real,T2<:Real}
+
+TBW
+"""
+function WoodburyCovariance(W::AbstractArray{T1} , U::AbstractArray{T2} ) where {T1<:Real,T2<:Real}
+	T = promote_type(T1,T2)
+	W,U = convert(AbstractArray{T},W), convert(AbstractArray{T},U)
+	width = size(W)
+	N  = 2*length(width)
+	if ndims(W)==ndims(U) && width == size(U) # add singleton dimension if needed
+		U = reshape(U[:],Val(2))
+		rank = 1
+	elseif (ndims(W) +1) ==ndims(U)
+		@assert width == size(U[..,1]) 
+		rank = last(size(U))
+		U = reshape(U,prod(width),rank)
+	else
+		error("U and W are not conformable")
 	end
-	
-	function WoodburyCovariance(width,rank::Int) 
-		return WoodburyCovariance{Float64}(width, rank)
-	end
+	W = W[:]
+	C = I
+	denom =  inv(C + U'*(W.*U))
+	return WoodburyCovariance{T,N}(W,U,C,denom,width, rank)
+end
+function WoodburyCovariance{T}(width::Int,rank::Int) where {T<:Real}
+	return WoodburyCovariance{T}(Tuple(width),rank::Int)
+end
+
+function WoodburyCovariance{T}(width::NTuple,rank::Int) where {T<:Real}
+	N  = 2*length(width)
+	L = prod(width)
+	W = ones(T,L)
+	U = zeros(T,L,rank)
+	denom = zeros(T,rank,rank)
+	return WoodburyCovariance{T,N}(W,U,I,denom,width, rank)
+end
+
+function WoodburyCovariance(width,rank::Int) 
+	return WoodburyCovariance{Float64}(width, rank)
 end
 
 function update!(A::WoodburyCovariance,W,U)
 	A.W[:] .= W
 	A.U[:,:] .= U
-	A.denom .=  inv(I + U'*(W.*U))
+	A.denom .=  inv(inv(A.C) + U'*(W.*U))
 	return A
 end
+
 function update!(A::WoodburyCovariance)
-	A.denom .=  inv(I + A.U'*(A.W.*A.U))
+	A.denom .=  inv(inv(W.C) + A.U'*(A.W.*A.U))
 	return A
 end
+
 Base.length(A::WoodburyCovariance) = prod(A.width).^2
 Base.size(A::WoodburyCovariance) = (A.width..., A.width...)
 
@@ -79,9 +90,9 @@ function Base.getindex(A::WoodburyCovariance, I...)
 	N = prod(I[L+1:end])
 
 	if M==N
-		return 1/A.W[M] + A.U[M,:]'*A.U[N,:]
+		return 1/A.W[M] + A.U[M,:]' * A.C * A.U[N,:]
 	else
-		return A.U[M,:]'*A.U[N,:]
+		return A.U[M,:]'* A.C * A.U[N,:]
 	end 
 end
 
