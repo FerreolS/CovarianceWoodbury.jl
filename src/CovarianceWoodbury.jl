@@ -10,7 +10,7 @@ using LinearAlgebra, ArrayTools
 
 
 
-abstract type Covariance{T,N} <: AbstractArray{T,N} end
+abstract type Covariance{T,N} <: AbstractArray{T,N}  end
 
 Base.eltype(A::Covariance{T,N}) where {T,N} = T
 Base.ndims(A::Covariance{T,N}) where {T,N} = N

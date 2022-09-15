@@ -35,7 +35,8 @@ struct WoodburyCovariance{T,N} <: Covariance{T,N}
 		L = prod(width)
 		W = ones(T,L)
 		U = zeros(T,L,rank)
-		return new{T,N}(W,U,width, rank)
+		denom = zeros(T,rank,rank)
+		return new{T,N}(W,U,denom,width, rank)
 	end
 	
 	function WoodburyCovariance(width,rank::Int) 
@@ -113,12 +114,21 @@ function train!(A::WoodburyCovariance{T,N}, data::AbstractArray{T} ; verb=false,
 	return A
 end
 
+Base.:*(A::WoodburyCovariance{T, N},r::AbstractArray{T,S}) where {N,T<:Real,S} = apply(A,r)
+
+Base.:*(A::WoodburyCovariance{T, 2},r::AbstractVector{T}) where {T<:Real} = apply(A,r)
+
 function apply(A::WoodburyCovariance,r::AbstractArray)
+	t = apply(A,r[:])
+	return reshape(t,A.width) 
+end
+
+function apply(A::WoodburyCovariance,r::AbstractVector)
 	ra = r.* A.W
-	return ra .+ A.W*(A.U * A.denom * A.U' * ra)
+	return ra .+ A.W .* (A.U * A.denom * A.U' * ra)
 end
 
 function squarednorm(A::WoodburyCovariance, r::AbstractArray)
-	ra = r.* A.W
-	return ra .* (r .+  (A.U * A.denom * A.U' * ra))
+	ra = r[:].* A.W
+	return sum(ra .* (r[:] .+  (A.U * A.denom * A.U' * ra)))
 end
