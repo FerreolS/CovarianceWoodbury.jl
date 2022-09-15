@@ -1,0 +1,10 @@
+name = "CovarianceWoodbury"
+uuid = "ceca39bc-7123-41d0-8ba0-09977bb9e298"
+authors = ["ferreol <ferreol.soulez@free.fr>"]
+version = "0.1.0"
+
+[deps]
+ArrayTools = "1dc0ca97-c5ce-4e77-ac6d-c576ac9d7f27"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OptimPackNextGen = "080ffe24-4a27-4ab0-ad71-7b624e73ef8d"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
