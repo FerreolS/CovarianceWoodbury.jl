@@ -1,11 +1,27 @@
 using Zygote, OptimPackNextGen
 
+"""
+WoodburyCovariance{T,N} <: Covariance{T,N} <: AbstractArray{T,N}
+
+is a covariance matrix stored in the form:
+
+C = W^-1 + U C U'
+
+where U is a low rank rectangular matrix. 
+
+If the input space is of size `L` and `U` is of rank `K`, only `L*(K+1)+K^2` 
+coefficients must be stored instead of `L(L+1)/2` for the full covariance matrix.
+
+Under this form, applying this C or its inverse (precision matrix)
+is trivial thanks to the matrix inversion lemma.
+
+"""
 struct WoodburyCovariance{T,N} <: Covariance{T,N}
-	W :: AbstractArray{T,1} # Diagonal
-	U :: AbstractArray{T,2} #
-	denom :: AbstractArray{T}
-	width :: NTuple
-	rank :: Integer
+	W :: AbstractArray{T,1} # Diagonal (size = width)
+	U :: AbstractArray{T,2} # width x rank  matrix
+	denom :: AbstractArray{T} # 1/(C^-1 + U' W U)
+	width :: NTuple			# size of the input space
+	rank :: Integer			# rank of U
 	function WoodburyCovariance(W::AbstractArray{T1} , U::AbstractArray{T2} ) where {T1<:Real,T2<:Real}
 		T = promote_type(T1,T2)
 		W,U = convert(AbstractArray{T},W), convert(AbstractArray{T},U)
@@ -25,7 +41,6 @@ struct WoodburyCovariance{T,N} <: Covariance{T,N}
 		denom =  inv(I + U'*(W.*U))
 		return new{T,N}(W,U,denom,width, rank)
 	end
-
 	function WoodburyCovariance{T}(width::Int,rank::Int) where {T<:Real}
 		return WoodburyCovariance{T}(Tuple(width),rank::Int)
 	end
@@ -124,11 +139,25 @@ function apply(A::WoodburyCovariance,r::AbstractArray)
 end
 
 function apply(A::WoodburyCovariance,r::AbstractVector)
+	return  r ./ A.W .+  (A.U *  A.U' * r)
+end
+
+Base.:\(A::WoodburyCovariance{T, N},r::AbstractArray{T,S}) where {N,T<:Real,S} = apply_inverse(A,r)
+
+Base.:\(A::WoodburyCovariance{T, 2},r::AbstractVector{T}) where {T<:Real} = apply_inverse(A,r)
+
+
+function apply_inverse(A::WoodburyCovariance,r::AbstractArray)
+	t = apply(A,r[:])
+	return reshape(t,A.width) 
+end
+
+function apply_inverse(A::WoodburyCovariance,r::AbstractVector)
 	ra = r.* A.W
 	return ra .+ A.W .* (A.U * A.denom * A.U' * ra)
 end
 
-function squarednorm(A::WoodburyCovariance, r::AbstractArray)
+function weightedsquarednorm(A::WoodburyCovariance, r::AbstractArray)
 	ra = r[:].* A.W
 	return sum(ra .* (r[:] .+  (A.U * A.denom * A.U' * ra)))
 end

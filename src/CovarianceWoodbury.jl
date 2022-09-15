@@ -2,7 +2,7 @@ module CovarianceWoodbury
 
 export ishermitian, WoodburyCovariance, 
 	   initialize!, buildCovariance, train!,
-	   apply, squarednorm
+	   apply, weightedsquarednorm
 
 import LinearAlgebra: ishermitian
 
