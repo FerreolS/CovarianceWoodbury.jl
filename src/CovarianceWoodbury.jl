@@ -1,8 +1,7 @@
 module CovarianceWoodbury
 
 export ishermitian, WoodburyCovariance, 
-	   reset!, buildCovariance, train!,
-	   apply, weightedsquarednorm
+	   reset!, buildCovariance, train!
 
 import LinearAlgebra: ishermitian
 

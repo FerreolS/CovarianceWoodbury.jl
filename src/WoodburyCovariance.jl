@@ -10,9 +10,9 @@ C = W^-1 + U C U'
 where U is a low rank rectangular matrix. 
 
 If the input space is of size `L` and `U` is of rank `K`, only `L*(K+1)+K^2` 
-coefficients must be stored instead of `L(L+1)/2` for the full covariance matrix.
+coefficients must be stored instead of at least `L(L+1)/2` for the full covariance matrix.
 
-Under this form, applying this C or its inverse (precision matrix)
+Under this form, applying this C or its inverse (i.e. precision matrix)
 is trivial thanks to the matrix inversion lemma.
 
 """
@@ -56,7 +56,7 @@ end
 
 
 """
-    WoodburyCovariance{T}(width,rank::Int) where {T<:Real}
+    WoodburyCovariance{T}(width,rank ) where {T<:Real}
 
 Build a WoodburyCovariance object of size `width x width` and rank `rank`
 """
@@ -83,7 +83,9 @@ function update!(A::WoodburyCovariance,W,U)
 	return A
 end
 
-
+#
+# Basic operations on WoodburyCovariance
+#
 Base.length(A::WoodburyCovariance) = prod(A.width).^2
 Base.size(A::WoodburyCovariance) = (A.width..., A.width...)
 
@@ -129,12 +131,26 @@ function reset!(A::WoodburyCovariance{T,N}) where {T,N}
 	return A
 end
 
+"""
+    buildCovariance(data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
+
+Build the covariance matrix learned from the data. 
+return the learned WoodburyCovariance 
+"""
 function buildCovariance(data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
 	A = WoodburyCovariance(1 ./ var(data, dims=ndims(data))[..,1] , randn(size(data)[1:end-1]...,rank) );
 	train!(A,data  ;  kwargs...)
 end
 
-function ShermanLkl(r::M,W::V,U::M) where {T<:AbstractFloat,
+
+"""
+    WoodburyLkl(r::M,W::V,U::M) where {T<:AbstractFloat,
+										M<:AbstractMatrix{T},
+										V<:AbstractVector{T}}
+
+Internal cost function used for CovarianceWoodbury learning
+"""
+function WoodburyLkl(r::M,W::V,U::M) where {T<:AbstractFloat,
 	M<:AbstractMatrix{T},
 	V<:AbstractVector{T}}
 	L,N = size(r)
@@ -146,18 +162,27 @@ function ShermanLkl(r::M,W::V,U::M) where {T<:AbstractFloat,
 	return 1/2 * (sum(χ2)/(L*N)  .- (Δa .- logdet(denom))/L)
 end
 
+"""
+    train!(A::WoodburyCovariance{T,N}, data::AbstractArray{T} ; kwargs...) where {T,N}
+
+Train the WoodburyCovariance `A` matrix on  `data` 
+"""
 function train!(A::WoodburyCovariance{T,N}, data::AbstractArray{T} ; kwargs...) where {T,N}
 	L = prod(A.width)
 	bounds = zeros(T,L,A.rank+1)
 	bounds[:,2:end] .=-Inf 
 	xinit = hcat(A.W,A.U)
 	
-	cost(x)  = ShermanLkl(data,x[:,1],x[:,2:end]) 
+	cost(x)  = WoodburyLkl(data,x[:,1],x[:,2:end]) 
 	xsol = vmlmb(cost, xinit; lower=bounds, autodiff=true , kwargs...)
 	update!(A, xsol[:,1], xsol[:,2:A.rank+1])
 	return A
 end
 
+
+"""
+ Overloaded multiplication and inverse for WoodburyCovariance
+"""
 Base.:*(A::WoodburyCovariance{T, N},r::AbstractArray{T,S}) where {N,T<:Real,S} = apply(A,r)
 
 Base.:*(A::WoodburyCovariance{T, 2},r::AbstractVector{T}) where {T<:Real} = apply(A,r)
@@ -184,9 +209,4 @@ end
 function apply_inverse(A::WoodburyCovariance,r::AbstractVector)
 	ra = r.* A.W
 	return ra .+ A.W .* (A.U * A.denom * A.U' * ra)
-end
-
-function weightedsquarednorm(A::WoodburyCovariance, r::AbstractArray)
-	ra = r[:].* A.W
-	return sum(ra .* (r[:] .+  (A.U * A.denom * A.U' * ra)))
 end
