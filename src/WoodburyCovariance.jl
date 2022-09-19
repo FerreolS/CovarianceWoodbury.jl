@@ -1,7 +1,7 @@
-using Zygote, OptimPackNextGen
+using Zygote, OptimPackNextGen, StatsBase, ArrayTools
 
 """
-WoodburyCovariance{T,N} <: Covariance{T,N} <: AbstractArray{T,N}
+	WoodburyCovariance{T,N} <: Covariance{T,N} <: AbstractArray{T,N}
 
 is a covariance matrix stored in the form:
 
@@ -29,7 +29,9 @@ end
 """
     WoodburyCovariance(W::AbstractArray{T1} , U::AbstractArray{T2} ) where {T1<:Real,T2<:Real}
 
-TBW
+Build a WoodburyCovariance object from `W` and `U`. 
+Its `width` is `size(W)` and its `rank` is `last(size(U))` .
+`C` is the identity matrix.
 """
 function WoodburyCovariance(W::AbstractArray{T1} , U::AbstractArray{T2} ) where {T1<:Real,T2<:Real}
 	T = promote_type(T1,T2)
@@ -51,10 +53,19 @@ function WoodburyCovariance(W::AbstractArray{T1} , U::AbstractArray{T2} ) where 
 	denom =  inv(C + U'*(W.*U))
 	return WoodburyCovariance{T,N}(W,U,C,denom,width, rank)
 end
+
+
+"""
+    WoodburyCovariance{T}(width,rank::Int) where {T<:Real}
+
+Build a WoodburyCovariance object of size `width x width` and rank `rank`
+"""
 function WoodburyCovariance{T}(width::Int,rank::Int) where {T<:Real}
 	return WoodburyCovariance{T}(Tuple(width),rank::Int)
 end
-
+function WoodburyCovariance(width,rank::Int) 
+	return WoodburyCovariance{Float64}(width, rank)
+end
 function WoodburyCovariance{T}(width::NTuple,rank::Int) where {T<:Real}
 	N  = 2*length(width)
 	L = prod(width)
@@ -64,9 +75,6 @@ function WoodburyCovariance{T}(width::NTuple,rank::Int) where {T<:Real}
 	return WoodburyCovariance{T,N}(W,U,I,denom,width, rank)
 end
 
-function WoodburyCovariance(width,rank::Int) 
-	return WoodburyCovariance{Float64}(width, rank)
-end
 
 function update!(A::WoodburyCovariance,W,U)
 	A.W[:] .= W
@@ -75,10 +83,6 @@ function update!(A::WoodburyCovariance,W,U)
 	return A
 end
 
-function update!(A::WoodburyCovariance)
-	A.denom .=  inv(inv(W.C) + A.U'*(A.W.*A.U))
-	return A
-end
 
 Base.length(A::WoodburyCovariance) = prod(A.width).^2
 Base.size(A::WoodburyCovariance) = (A.width..., A.width...)
@@ -102,18 +106,32 @@ function Base.show(io::IO, obj::WoodburyCovariance{T,N}) where {T,N}
     print(io, " WoodburyCovariance{$T,$N} with rank ", obj.rank)
 end
 
+
+"""
+    update!(A::WoodburyCovariance{T,N}) where {T,N}
+
+Internal function to update cached variables 
+"""
+function update!(A::WoodburyCovariance{T,N}) where {T,N}
+	A.denom .=  inv(inv(A.C) + A.U'*(A.W.*A.U))
+	return A
+end
 	
-function initialize!(A::WoodburyCovariance{T,N}) where {T,N}
+"""
+    reset!(A::WoodburyCovariance{T,N}) where {T,N}
+
+reset the WoodburyCovariance to identity
+"""
+function reset!(A::WoodburyCovariance{T,N}) where {T,N}
 	fill!(A.W,one(T))
 	fill!(A.U,zero(T))
 	update!(A)
 	return A
 end
 
-function buildCovariance(data::AbstractArray{T},rank::Int) where {T<:Real}
-	width = size(data)
-	A = WoodburyCovariance{T}(width, rank)
-	train!(A,data)
+function buildCovariance(data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
+	A = WoodburyCovariance(1 ./ var(data, dims=ndims(data))[..,1] , randn(size(data)[1:end-1]...,rank) );
+	train!(A,data  ;  kwargs...)
 end
 
 function ShermanLkl(r::M,W::V,U::M) where {T<:AbstractFloat,
@@ -128,14 +146,14 @@ function ShermanLkl(r::M,W::V,U::M) where {T<:AbstractFloat,
 	return 1/2 * (sum(χ2)/(L*N)  .- (Δa .- logdet(denom))/L)
 end
 
-function train!(A::WoodburyCovariance{T,N}, data::AbstractArray{T} ; verb=false,maxiter=1000) where {T,N}
+function train!(A::WoodburyCovariance{T,N}, data::AbstractArray{T} ; kwargs...) where {T,N}
 	L = prod(A.width)
 	bounds = zeros(T,L,A.rank+1)
 	bounds[:,2:end] .=-Inf 
 	xinit = hcat(A.W,A.U)
 	
 	cost(x)  = ShermanLkl(data,x[:,1],x[:,2:end]) 
-	xsol = vmlmb(cost, xinit, lower=bounds,verb=verb,autodiff=true,maxiter=maxiter)
+	xsol = vmlmb(cost, xinit; lower=bounds, autodiff=true , kwargs...)
 	update!(A, xsol[:,1], xsol[:,2:A.rank+1])
 	return A
 end
