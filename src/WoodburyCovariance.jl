@@ -89,6 +89,19 @@ end
 Base.length(A::WoodburyCovariance) = prod(A.width).^2
 Base.size(A::WoodburyCovariance) = (A.width..., A.width...)
 
+function Base.getindex(A::WoodburyCovariance{T, N}, I::CartesianIndex{N}) where {T,N}
+	@assert iseven(N) "Dimension must be even"
+	L = N/2
+ 	P = prod(I.I[1:L])
+	Q = prod(I.I[L+1:end])
+
+	if P==Q
+		return 1/A.W[P] + A.U[P,:]' * A.C * A.U[Q,:]
+	else
+		return A.U[P,:]'* A.C * A.U[Q,:]
+	end 
+end
+
 function Base.getindex(A::WoodburyCovariance, I...)
 	@assert iseven(length(I)) "Dimension must be even"
 	L = length(I)/2
@@ -115,7 +128,7 @@ end
 Internal function to update cached variables 
 """
 function update!(A::WoodburyCovariance{T,N}) where {T,N}
-	A.denom .=  inv(inv(A.C) + A.U'*(A.W.*A.U))
+	A.denom .=  inv(inv(A.C) + A.U'*(A.W.*A.U)) 
 	return A
 end
 	
@@ -193,7 +206,7 @@ function apply(A::WoodburyCovariance,r::AbstractArray)
 end
 
 function apply(A::WoodburyCovariance,r::AbstractVector)
-	return  r ./ A.W .+  (A.U *  A.U' * r)
+	return  r ./ A.W .+  (A.U * A.C * A.U' * r)
 end
 
 Base.:\(A::WoodburyCovariance{T, N},r::AbstractArray{T,S}) where {N,T<:Real,S} = apply_inverse(A,r)
@@ -208,5 +221,5 @@ end
 
 function apply_inverse(A::WoodburyCovariance,r::AbstractVector)
 	ra = r.* A.W
-	return ra .+ A.W .* (A.U * A.denom * A.U' * ra)
+	return ra .- A.W .* (A.U * A.denom * A.U' * ra)
 end
