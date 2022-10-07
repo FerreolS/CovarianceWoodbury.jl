@@ -1,4 +1,4 @@
-using Zygote, OptimPackNextGen, StatsBase, ArrayTools
+using Zygote, OptimPackNextGen, StatsBase, ArrayTools, TSVD
 
 """
 	WoodburyCovariance{T,N} <: Covariance{T,N} <: AbstractArray{T,N}
@@ -151,7 +151,31 @@ Build the covariance matrix learned from the data.
 return the learned WoodburyCovariance 
 """
 function buildCovariance(data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
+	return buildCovariance(Val(:random),data,rank ; kwargs...) 
+end
+
+"""
+    buildCovariance(data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
+
+Build the covariance matrix learned from the data. 
+return the learned WoodburyCovariance 
+"""
+function buildCovariance(::Val{:random},data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
+
 	A = WoodburyCovariance(1 ./ var(data, dims=ndims(data))[..,1] , randn(size(data)[1:end-1]...,rank) );
+	train!(A,data  ;  kwargs...)
+end
+
+"""
+    buildCovariance(data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
+
+Build the covariance matrix learned from the data. 
+return the learned WoodburyCovariance 
+"""
+function buildCovariance(::Val{:svd},data::AbstractArray{T},rank::Int ; kwargs...) where {T<:Real}
+	Cemp = cov(data,dims=2)
+	U, s, V = tsvd(Cemp,rank)
+	A = WoodburyCovariance(1 ./ var(data, dims=ndims(data))[..,1] , sqrt.(s').*V);
 	train!(A,data  ;  kwargs...)
 end
 
@@ -209,13 +233,36 @@ function apply(A::WoodburyCovariance,r::AbstractVector)
 	return  r ./ A.W .+  (A.U * A.C * A.U' * r)
 end
 
-Base.:\(A::WoodburyCovariance{T, N},r::AbstractArray{T,S}) where {N,T<:Real,S} = apply_inverse(A,r)
+function Base.:\(A::WoodburyCovariance{T, N},r::AbstractArray{T,S}) where {N,T<:Real,S} 
+	apply_inverse(A,r)
+end
+
+function Base.:\(A::WoodburyCovariance{T, N},r::AbstractArray{T,N}) where {N,T<:Real} 
+	s = similar(r)
+	ax = axes(r)
+	for I in CartesianIndices(ax[N/2+1:end])
+		t =  apply_inverse(A,r[ax[1:(N/2)]...,I][:])
+		s[ax[1:(N/2)]...,I] .= reshape(t,A.width) 
+	end
+	return s
+end
+
+function Base.:\(A::WoodburyCovariance{T, 2}, r::AbstractMatrix{T}) where T<:Real
+	s = similar(r)
+	ax = axes(r)
+	for I in CartesianIndices(ax[2])
+		t =  apply_inverse(A,r[ax[1],I][:])
+		s[ax[1],I] .= reshape(t,A.width) 
+	end
+	return s
+
+end
 
 Base.:\(A::WoodburyCovariance{T, 2},r::AbstractVector{T}) where {T<:Real} = apply_inverse(A,r)
 
 
 function apply_inverse(A::WoodburyCovariance,r::AbstractArray)
-	t = apply(A,r[:])
+	t = apply_inverse(A,r[:])
 	return reshape(t,A.width) 
 end
 
